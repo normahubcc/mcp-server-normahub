@@ -1,6 +1,6 @@
 {
   "name": "@normahub/mcp-server",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Model Context Protocol (MCP) server for NormaHub API. Stdio and SSE transports for Cursor, Claude Desktop and AI agents.",
   "main": "dist/index.js",
   "type": "module",

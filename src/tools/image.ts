@@ -26,15 +26,41 @@ export const IMAGE_TOOL_DEFINITION = {
 };
 
 export async function handleImageTool(args: any): Promise<any> {
-  const model = args.model || "gpt-image-2.5-flare";
-  const res = await apiClient.generateImage(args.prompt, model);
-  const imageUrl = res.data?.[0]?.url || "No image URL returned";
+  const model = args.model || "gpt-image-2";
+  const res: any = await apiClient.generateImage(args.prompt, model);
+
+  // NormaHub returns image either in result.data or top-level data array
+  const imgItem = res?.result?.data?.[0] || res?.data?.[0];
+  const url = imgItem?.url || "";
+  const b64 = imgItem?.b64_json || "";
+  const mimeType = imgItem?.mime_type || "image/png";
+
+  if (url) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Image generated with ${model}:\n${url}`,
+        },
+      ],
+    };
+  } else if (b64) {
+    return {
+      content: [
+        {
+          type: "image",
+          data: b64,
+          mimeType,
+        },
+      ],
+    };
+  }
 
   return {
     content: [
       {
         type: "text",
-        text: `🎨 Image generated using ${model}:\n${imageUrl}`,
+        text: `Image generated with ${model} (Task ID: ${res?.id || "ok"}).`,
       },
     ],
   };
