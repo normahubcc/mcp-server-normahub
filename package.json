@@ -1,0 +1,50 @@
+{
+  "name": "@normahub/mcp-server",
+  "version": "0.2.0",
+  "description": "Model Context Protocol (MCP) server for NormaHub. Connect 30 AI models (GPT-6, Claude 3.5/5, DeepSeek, SeeDance Video) to Cursor, Claude Desktop and AI agents without VPN.",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "normahub-mcp": "./dist/index.js",
+    "normahub-mcp-sse": "./dist/sse.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/tests/server.test.js",
+    "start": "node dist/index.js",
+    "start:sse": "node dist/sse.js",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "normahub",
+    "claude-desktop",
+    "cursor",
+    "openai",
+    "anthropic",
+    "seedance",
+    "ai-agents"
+  ],
+  "author": "NormaHub Team <manager@normahub.cc>",
+  "license": "MIT",
+  "homepage": "https://normahub.cc",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/normahubcc/mcp-server-normahub.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
