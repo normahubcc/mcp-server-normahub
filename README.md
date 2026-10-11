@@ -6,7 +6,7 @@
 
 # NormaHub MCP Server
 
-[![Release](https://img.shields.io/badge/release-v0.2.0-blue?style=flat-square)](https://github.com/normahubcc/mcp-server-normahub/releases)
+[![npm version](https://img.shields.io/badge/npm-v0.2.1-CB3837?style=flat-square&logo=npm)](https://www.npmjs.com/package/@normahub/mcp-server)
 [![Node](https://img.shields.io/badge/node-18+-green?style=flat-square)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![MCP Standard](https://img.shields.io/badge/MCP-1.0-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io)
