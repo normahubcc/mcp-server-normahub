@@ -1,0 +1,16 @@
+{
+  "context_servers": {
+    "normahub": {
+      "command": {
+        "path": "npx",
+        "args": [
+          "-y",
+          "@normahub/mcp-server"
+        ],
+        "env": {
+          "NORMAHUB_API_KEY": "YOUR_NORMAHUB_API_KEY"
+        }
+      }
+    }
+  }
+}
