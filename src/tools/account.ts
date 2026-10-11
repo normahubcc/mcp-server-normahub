@@ -18,13 +18,13 @@ export async function handleAccountTool(_args: any): Promise<any> {
   const modelsData = await apiClient.getModels();
   const modelList = Array.isArray(modelsData?.data)
     ? modelsData.data.map((m: any) => m.id).join(", ")
-    : "30 active models (Claude Sonnet 5.5, GPT-6 Sol, DeepSeek v4.1, SeeDance 2.5, etc.)";
+    : "30 active models (Claude, GPT, DeepSeek, Qwen, SeeDance)";
 
   return {
     content: [
       {
         type: "text",
-        text: `⚡ NormaHub Connected Models:\n${modelList}\n\nEndpoint: https://api.normahub.cc/v1\nCatalog & Pricing: https://normahub.cc/models`,
+        text: `NormaHub Connected Models:\n${modelList}\n\nEndpoint: https://api.normahub.cc/v1\nCatalog: https://normahub.cc/models`,
       },
     ],
   };

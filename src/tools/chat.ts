@@ -7,13 +7,13 @@ import { apiClient } from "../client.js";
 
 export const CHAT_TOOL_DEFINITION = {
   name: "normahub_prompt_model",
-  description: "Send a prompt to top-tier AI models (Claude Sonnet 5.5, GPT-6 Sol, DeepSeek v4.1, Grok 4.7) via NormaHub API without VPN. Direct Russian routing with zero rate-limit anxiety.",
+  description: "Send a prompt to LLM models via NormaHub API (Claude, GPT, DeepSeek, Qwen).",
   inputSchema: {
     type: "object",
     properties: {
       model: {
         type: "string",
-        description: "Model ID. Examples: claude-sonnet-5-5, gpt-6-sol, deepseek-v4.1-flash, grok-4.7, glm-5.3-flash",
+        description: "Model ID. Examples: claude-sonnet-5-5, deepseek-v4.1-flash, grok-4.7, glm-5.3-flash",
         default: "claude-sonnet-5-5",
       },
       prompt: {

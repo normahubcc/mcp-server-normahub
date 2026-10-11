@@ -55,7 +55,7 @@ export class NormaHubClient {
   }
 
   /**
-   * Prompts any text/code model (Claude Sonnet 5.5, GPT-6 Sol, DeepSeek v4.1, etc.)
+   * Prompts text/code models via /v1/chat/completions.
    */
   async createChatCompletion(request: NormaHubChatRequest): Promise<NormaHubChatResponse> {
     return this.request<NormaHubChatResponse>("chat/completions", {

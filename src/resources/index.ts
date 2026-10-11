@@ -9,14 +9,14 @@ import { NORMAHUB_MODELS } from "../data/models.js";
 export const RESOURCE_DEFINITIONS = [
   {
     uri: "normahub://models",
-    name: "NormaHub 30 AI Models Catalog & Pricing",
-    description: "Real-time catalog of 30 connected AI models (Claude 5.5, GPT-6 Sol, DeepSeek v4.1, SeeDance 2.5, Grok 4.7) with context limits, capabilities and pricing.",
+    name: "NormaHub Models Catalog",
+    description: "Catalog of active AI models with context limits, capabilities and pricing.",
     mimeType: "application/json",
   },
   {
     uri: "normahub://status",
-    name: "NormaHub Gateway & Connectivity Status",
-    description: "NormaHub API gateway health status, latency ping, active endpoints, and direct Russia routing info (No VPN required).",
+    name: "NormaHub Gateway Status",
+    description: "NormaHub API gateway health status, latency ping, and active endpoints.",
     mimeType: "application/json",
   },
 ];

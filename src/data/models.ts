@@ -263,7 +263,7 @@ export const NORMAHUB_MODELS: NormaHubModelMeta[] = [
     context: "1080p Cinematic",
     capabilities: ["Text-to-Video", "Image-to-Video", "Physics Realism", "1080p"],
     pricing: { fixed: "Fixed per video" },
-    description: "S-Tier video generation: fluid dynamics, complex lighting and camera motion.",
+    description: "High-definition video generation with support for fluid camera motion and lighting.",
   },
   {
     id: "seedance-2.0",
