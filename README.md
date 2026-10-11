@@ -1,6 +1,13 @@
+<p align="center">
+  <a href="https://normahub.cc">
+    <img src="./docs/images/logo.png" alt="NormaHub" width="120" />
+  </a>
+</p>
+
 # NormaHub MCP Server
 
-[![npm version](https://img.shields.io/npm/v/@normahub/mcp-server?style=flat-square)](https://www.npmjs.com/package/@normahub/mcp-server)
+[![Release](https://img.shields.io/badge/release-v0.2.0-blue?style=flat-square)](https://github.com/normahubcc/mcp-server-normahub/releases)
+[![Node](https://img.shields.io/badge/node-18+-green?style=flat-square)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![MCP Standard](https://img.shields.io/badge/MCP-1.0-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io)
 
