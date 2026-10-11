@@ -7,7 +7,7 @@ import { apiClient } from "../client.js";
 
 export const IMAGE_TOOL_DEFINITION = {
   name: "normahub_generate_image",
-  description: "Generate high-resolution AI images using GPT Image 2.5 Flare or Grok Imagine Image 2.0 via NormaHub API.",
+  description: "Generate images using GPT Image or Grok Imagine Image via NormaHub API.",
   inputSchema: {
     type: "object",
     properties: {

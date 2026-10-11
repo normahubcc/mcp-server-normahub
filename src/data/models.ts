@@ -169,7 +169,7 @@ export const NORMAHUB_MODELS: NormaHubModelMeta[] = [
     context: "1,000,000 tokens",
     capabilities: ["Tools", "Reasoning", "Stream", "Code"],
     pricing: { inputPer1M: "$0.0180", outputPer1M: "$0.0500" },
-    description: "Ultra-budget high-performance model. 20x cheaper than competitors with near-frontier coding quality.",
+    description: "Budget high-performance model with low token pricing for code and reasoning.",
   },
   {
     id: "glm-5.3-flash",

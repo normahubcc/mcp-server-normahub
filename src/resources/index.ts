@@ -27,7 +27,7 @@ export async function handleReadResource(uri: string): Promise<any> {
     const modelsMarkdown = [
       "# NormaHub Active Models Catalog (30 Models)",
       "",
-      "Direct API access to 30 frontier AI models without VPN, billed in rubles with RF cards / SBP.",
+      "Direct API access to 30 AI models (Claude, DeepSeek, GPT, SeeDance) without VPN, billed in rubles with RF cards / SBP.",
       "",
       "| Model ID | Provider | Context | Capabilities | Input / 1M | Output / 1M | Fixed |",
       "|---|---|---|---|---|---|---|",

@@ -7,7 +7,7 @@ import { apiClient } from "../client.js";
 
 export const VIDEO_TOOL_DEFINITION = {
   name: "normahub_generate_video",
-  description: "Generate cinematic AI videos using SeeDance 2.5 / 2.0 and xAI Grok Imagine Video via NormaHub API. Automatically polls until video render completes.",
+  description: "Generate AI videos using SeeDance 2.5 / 2.0 and xAI Grok Imagine Video via NormaHub API. Automatically polls until video render completes.",
   inputSchema: {
     type: "object",
     properties: {
@@ -40,7 +40,7 @@ export async function handleVideoTool(args: any): Promise<any> {
     content: [
       {
         type: "text",
-        text: `🎬 Video successfully generated with ${model}!\n\nTask ID: ${completedTask.id}\nDownload MP4: ${completedTask.video_url}`,
+        text: `Video generated with ${model}:\n\nTask ID: ${completedTask.id}\nDownload MP4: ${completedTask.video_url}`,
       },
     ],
   };
@@ -48,7 +48,7 @@ export async function handleVideoTool(args: any): Promise<any> {
 
 export const IMAGE_TO_VIDEO_TOOL_DEFINITION = {
   name: "normahub_image_to_video",
-  description: "Animate an input image into a cinematic AI video (Image-to-Video) using SeeDance 2.5 / 2.0 via NormaHub API. Accepts image URL and animation prompt. Automatically polls until video render completes.",
+  description: "Animate an input image into a video (Image-to-Video) using SeeDance 2.5 / 2.0 via NormaHub API. Accepts image URL and animation prompt. Automatically polls until video render completes.",
   inputSchema: {
     type: "object",
     properties: {
@@ -92,7 +92,7 @@ export async function handleImageToVideoTool(args: any): Promise<any> {
     content: [
       {
         type: "text",
-        text: `🎬 Image-to-Video successfully generated with ${model}!\n\nInput Image: ${args.image_url}\nTask ID: ${completedTask.id}\nDownload MP4: ${completedTask.video_url}`,
+        text: `Image-to-Video generated with ${model}:\n\nInput Image: ${args.image_url}\nTask ID: ${completedTask.id}\nDownload MP4: ${completedTask.video_url}`,
       },
     ],
   };

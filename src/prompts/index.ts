@@ -6,7 +6,7 @@
 export const PROMPT_DEFINITIONS = [
   {
     name: "review_code",
-    description: "Senior-level architectural, security and performance code review (Optimized for Claude Sonnet 5.5).",
+    description: "Code review template focusing on architecture, security, and performance.",
     arguments: [
       {
         name: "code",
@@ -27,7 +27,7 @@ export const PROMPT_DEFINITIONS = [
   },
   {
     name: "direct_video_scene",
-    description: "Cinematic prompt generator and director sheet for SeeDance 2.5 / Grok Video.",
+    description: "Prompt generator for SeeDance 2.5 and Grok Video.",
     arguments: [
       {
         name: "concept",
@@ -48,7 +48,7 @@ export const PROMPT_DEFINITIONS = [
   },
   {
     name: "cost_optimize_route",
-    description: "Analyzes AI workload requirements and recommends the optimal, lowest-cost model among NormaHub's 30 LLMs.",
+    description: "Recommends cost-effective models for a given workload among NormaHub models.",
     arguments: [
       {
         name: "task_description",
@@ -77,17 +77,17 @@ export async function handleGetPrompt(name: string, args: Record<string, any> = 
       const focus = args.focus ? `Specific Focus Area: ${args.focus}\n` : "";
 
       const promptText = [
-        "You are an Elite Staff / Principal Software Architect performing a thorough Senior Code Review.",
-        "Model recommendation: claude-sonnet-5-5 via NormaHub for high-fidelity reasoning.",
+        "You are performing a code review.",
+        "Model recommendation: claude-sonnet-5-5 via NormaHub.",
         "",
         context,
         focus,
-        "Analyze the following code with ruthless precision:",
-        "1. Architectural integrity, separation of concerns, and clean boundaries.",
-        "2. Potential race conditions, memory leaks, unhandled async errors, and edge-cases.",
-        "3. Security vulnerabilities (injection, auth bypass, data leaks, denial of service).",
-        "4. Performance bottlenecks, algorithmic complexity, and token/network efficiency.",
-        "5. Concreate, actionable refactoring code snippets (not vague generalities).",
+        "Analyze the following code:",
+        "1. Architecture, separation of concerns, and boundaries.",
+        "2. Potential race conditions, memory leaks, unhandled async errors, and edge cases.",
+        "3. Security vulnerabilities (injection, auth bypass, data leaks).",
+        "4. Performance bottlenecks, algorithmic complexity, and network efficiency.",
+        "5. Concrete refactoring code snippets where appropriate.",
         "",
         "```",
         code,
@@ -97,7 +97,7 @@ export async function handleGetPrompt(name: string, args: Record<string, any> = 
         .join("\n");
 
       return {
-        description: "Senior Code Review prompt pre-configured for Claude Sonnet 5.5",
+        description: "Code review prompt",
         messages: [
           {
             role: "user",
@@ -112,27 +112,27 @@ export async function handleGetPrompt(name: string, args: Record<string, any> = 
 
     case "direct_video_scene": {
       const concept = args.concept || "";
-      const style = args.style || "Cinematic 35mm film, volumetric lighting, photorealistic physics";
+      const style = args.style || "Cinematic 35mm film, volumetric lighting";
       const aspect = args.aspect_ratio || "16:9 widescreen";
 
       const promptText = [
-        "You are an Award-Winning AI Cinematographer and Director crafting prompt parameters for SeeDance 2.5 on NormaHub.",
+        "Craft prompt parameters for SeeDance 2.5 / Grok Video on NormaHub.",
         "",
         `Concept: ${concept}`,
         `Visual Style: ${style}`,
         `Aspect Ratio: ${aspect}`,
         "",
-        "Formulate a production-grade prompt suitable for SeeDance 2.5 / Grok Imagine Video:",
+        "Formulate a prompt suitable for SeeDance 2.5 / Grok Imagine Video:",
         "- Camera motion: tracking shot, crane up, slow dolly zoom, or whip pan",
         "- Lighting & optics: anamorphic lens flare, golden hour rim light, volumetric haze",
         "- Subject physics: realistic cloth dynamics, fluid motion, atmospheric particle drift",
-        "- Pacing & Temporal coherence: 5-second progression beat by beat",
+        "- Pacing: 5-second progression beat by beat",
         "",
         "Output the final prompt in English optimized for video generation models, plus a 1-sentence summary of camera dynamics.",
       ].join("\n");
 
       return {
-        description: "Cinematic prompt generator for SeeDance 2.5",
+        description: "Prompt generator for SeeDance 2.5",
         messages: [
           {
             role: "user",
@@ -151,13 +151,13 @@ export async function handleGetPrompt(name: string, args: Record<string, any> = 
       const latency = args.latency_sensitivity ? `Latency Sensitivity: ${args.latency_sensitivity}\n` : "";
 
       const promptText = [
-        "You are an AI FinOps & Infrastructure Optimization Specialist on NormaHub.",
-        "Your mission is to find the most cost-effective model route among NormaHub's 30 models without compromising required output quality.",
+        "Analyze model costs and routing options on NormaHub.",
+        "Find the most cost-effective model route among NormaHub's models without compromising output quality.",
         "",
         `Task Description: ${taskDesc}`,
         volume,
         latency,
-        "Review the NormaHub catalog matrix:",
+        "NormaHub catalog overview:",
         "- DeepSeek v4.1 Flash ($0.018 in / $0.050 out per 1M) -> Fast code extraction, classification, structured JSON, high volume.",
         "- GLM 5.3 Flash ($0.025 in / $0.100 out per 1M) -> Low-latency pipelines and bilingual parsing.",
         "- Claude Sonnet 5.5 ($0.35 in / $1.80 out per 1M) -> Complex architectural synthesis, refactoring.",
@@ -172,7 +172,7 @@ export async function handleGetPrompt(name: string, args: Record<string, any> = 
         .join("\n");
 
       return {
-        description: "Cost optimization and intelligent model routing analyzer",
+        description: "Cost optimization and model routing advisor",
         messages: [
           {
             role: "user",
