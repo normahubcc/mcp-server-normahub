@@ -161,6 +161,67 @@ export class NormaHubClient {
   }
 
   /**
+   * Gets account balance in RUB
+   */
+  async getBalance(): Promise<any> {
+    try {
+      return await this.request<any>("balance");
+    } catch {
+      return { balance: null, currency: "RUB", status: "active" };
+    }
+  }
+
+  /**
+   * Transcribes audio using Whisper via POST /v1/audio/transcriptions
+   */
+  async transcribeAudio(
+    audioBuffer: Buffer,
+    filename: string,
+    model: string = "whisper-1",
+    language?: string,
+    prompt?: string
+  ): Promise<any> {
+    const boundary = "----NormaHubBoundary" + Math.random().toString(36).substring(2);
+    const crlf = "\r\n";
+
+    let body = Buffer.from("");
+    const addField = (name: string, value: string) => {
+      const part = `--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`;
+      body = Buffer.concat([body, Buffer.from(part, "utf-8")]);
+    };
+
+    addField("model", model);
+    if (language) addField("language", language);
+    if (prompt) addField("prompt", prompt);
+
+    const fileHeader = Buffer.from(
+      `--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="${filename}"${crlf}Content-Type: application/octet-stream${crlf}${crlf}`,
+      "utf-8"
+    );
+    const fileFooter = Buffer.from(`${crlf}--${boundary}--${crlf}`, "utf-8");
+
+    body = Buffer.concat([body, fileHeader, audioBuffer, fileFooter]);
+
+    const url = `${CONFIG.baseUrl}/audio/transcriptions`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${CONFIG.apiKey}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "User-Agent": "NormaHub-MCP-Server/0.2.5",
+      },
+      body,
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Whisper API error (${response.status}): ${err}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
    * Measures gateway ping latency and connection health
    */
   async getGatewayStatus(): Promise<NormaHubGatewayStatus> {

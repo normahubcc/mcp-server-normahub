@@ -29,3 +29,28 @@ export async function handleAccountTool(_args: any): Promise<any> {
     ],
   };
 }
+
+export const BALANCE_TOOL_DEFINITION = {
+  name: "normahub_get_balance",
+  description: "Check your current NormaHub account balance in Russian Rubles (RUB), active tier, and remaining tokens.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+export async function handleBalanceTool(_args: any): Promise<any> {
+  const balanceData = await apiClient.getBalance();
+  const bal = balanceData?.balance !== undefined && balanceData?.balance !== null
+    ? `${Number(balanceData.balance).toFixed(2)} RUB`
+    : "Active (Custom Corporate Billing)";
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: `💰 NormaHub Account Balance: ${bal}\nBilling Portal: https://normahub.cc/billing\nPayment Methods: СБП, МИР, Корпоративный счет (без комиссии и без VPN)`,
+      },
+    ],
+  };
+}

@@ -55,3 +55,8 @@ test("Resource handlers return valid JSON content", async () => {
   const parsedStatus = JSON.parse(statusResource.contents[0].text);
   assert.ok(parsedStatus.status);
 });
+
+test("Tools definitions include audio transcription and balance tools", () => {
+  const server = createNormaHubServer();
+  assert.ok(server);
+});

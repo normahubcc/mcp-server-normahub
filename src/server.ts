@@ -22,7 +22,13 @@ import {
   handleVideoTool,
 } from "./tools/video.js";
 import { IMAGE_TOOL_DEFINITION, handleImageTool } from "./tools/image.js";
-import { ACCOUNT_TOOL_DEFINITION, handleAccountTool } from "./tools/account.js";
+import {
+  ACCOUNT_TOOL_DEFINITION,
+  BALANCE_TOOL_DEFINITION,
+  handleAccountTool,
+  handleBalanceTool,
+} from "./tools/account.js";
+import { AUDIO_TOOL_DEFINITION, handleAudioTool } from "./tools/audio.js";
 import { RESOURCE_DEFINITIONS, handleReadResource } from "./resources/index.js";
 import { PROMPT_DEFINITIONS, handleGetPrompt } from "./prompts/index.js";
 
@@ -32,7 +38,7 @@ export function createNormaHubServer(): Server {
   const server = new Server(
     {
       name: "normahub-mcp-server",
-      version: "0.2.0",
+      version: "0.2.5",
     },
     {
       capabilities: {
@@ -52,6 +58,8 @@ export function createNormaHubServer(): Server {
         IMAGE_TO_VIDEO_TOOL_DEFINITION,
         IMAGE_TOOL_DEFINITION,
         ACCOUNT_TOOL_DEFINITION,
+        BALANCE_TOOL_DEFINITION,
+        AUDIO_TOOL_DEFINITION,
       ],
     };
   });
@@ -71,6 +79,10 @@ export function createNormaHubServer(): Server {
           return await handleImageTool(args);
         case "normahub_list_models":
           return await handleAccountTool(args);
+        case "normahub_get_balance":
+          return await handleBalanceTool(args);
+        case "normahub_transcribe_audio":
+          return await handleAudioTool(args);
         default:
           throw new Error(`Unknown tool requested: ${name}`);
       }
