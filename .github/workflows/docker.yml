@@ -1,0 +1,92 @@
+name: Docker
+
+# Publishes the HTTP/SSE server image to GHCR. No registry account is needed:
+# the workflow authenticates with GITHUB_TOKEN, which already has packages:write.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/mcp-server
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: meta
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.minor }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.description=NormaHub MCP server (HTTP and SSE transports)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image is only useful if it starts and reports its own version.
+      # A green build is not evidence; a running container that answers /health is.
+      - name: Smoke test the published image
+        env:
+          TAG: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+          EXPECTED: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 18081:3001 "$TAG"
+          trap 'docker rm -f smoke >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18081/health > /tmp/health.json 2>/dev/null; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json
+          python3 - <<'PY'
+          import json, os, sys
+          data = json.load(open("/tmp/health.json", encoding="utf-8"))
+          expected = os.environ["EXPECTED"]
+          problems = []
+          if data.get("status") != "operational":
+              problems.append(f"status={data.get('status')!r}")
+          if data.get("version") != expected:
+              problems.append(f"version={data.get('version')!r}, expected {expected}")
+          if not isinstance(data.get("tools"), int) or data["tools"] < 1:
+              problems.append(f"tools={data.get('tools')!r}")
+          if problems:
+              print("health check failed: " + "; ".join(problems), file=sys.stderr)
+              sys.exit(1)
+          print(f"health ok: version {expected}, tools {data['tools']}")
+          PY
