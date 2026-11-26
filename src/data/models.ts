@@ -1,6 +1,10 @@
 /**
- * Complete catalog of 30 models available on NormaHub.
- * Source of truth: https://normahub.cc/models
+ * Offline snapshot of the catalog, shipped with the package.
+ *
+ * This is NOT the source of truth: the server reads
+ * `https://api.normahub.cc/api/v1/public/models` and uses this snapshot only
+ * when the network is unavailable (or NORMAHUB_OFFLINE=1). Model ids and prices
+ * here lag behind the live catalog, so callers always see which source was used.
  */
 
 import { NormaHubModelMeta } from "../types.js";

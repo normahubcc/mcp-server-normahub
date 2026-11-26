@@ -24,3 +24,10 @@
 Файл: [`continue_config.json`](continue_config.json)
 
 Добавьте секцию в `~/.continue/config.json`.
+
+## 5. Удалённый сервер (Streamable HTTP)
+Файл: [`http_client.json`](http_client.json)
+
+Для сервера, запущенного через Docker или на отдельной машине (`npm run start:http`).
+Клиент подключается к `http://host:3001/mcp`; ключ задаётся в окружении сервера, а не в конфиге клиента.
+Устаревшие клиенты, которым нужен только SSE, используют `http://host:3001/sse`.

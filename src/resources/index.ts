@@ -1,97 +1,90 @@
 /**
- * MCP Resources for NormaHub.
- * Exposes live model catalog and gateway operational status.
+ * MCP resources.
+ *
+ * `normahub://models` now renders the live catalog. The previous version
+ * returned a bundled array titled "30 Models" while the gateway served 34 and
+ * no longer served the SeeDance models that the array advertised.
  */
 
 import { apiClient } from "../client.js";
-import { NORMAHUB_MODELS } from "../data/models.js";
+import {
+  formatPrice,
+  loadCatalog,
+  type Catalog,
+  type CatalogModel,
+} from "../catalog.js";
 
 export const RESOURCE_DEFINITIONS = [
   {
     uri: "normahub://models",
-    name: "NormaHub Models Catalog",
-    description: "Catalog of active AI models with context limits, capabilities and pricing.",
+    name: "NormaHub model catalog",
+    description:
+      "Live catalog of available models: id, vendor, modality, context window, capabilities, prices. " +
+      "Refreshed from the public endpoint every 10 minutes.",
     mimeType: "application/json",
   },
   {
     uri: "normahub://status",
-    name: "NormaHub Gateway Status",
-    description: "NormaHub API gateway health status, latency ping, and active endpoints.",
+    name: "NormaHub gateway status",
+    description: "Reachability of the gateway, latency of a models call, and the endpoints in use.",
     mimeType: "application/json",
   },
 ];
 
-export async function handleReadResource(uri: string): Promise<any> {
+function markdownTable(catalog: Catalog): string {
+  const line = (model: CatalogModel): string => {
+    const context = model.contextWindow === null ? "-" : `${Math.round(model.contextWindow / 1000)}K`;
+    const price =
+      model.category === "image"
+        ? model.pricing.imagePerGeneration === null
+          ? "-"
+          : `$${formatPrice(model.pricing.imagePerGeneration)}/image`
+        : model.category === "video"
+          ? model.pricing.videoPerSecond["720p"] === null
+            ? "-"
+            : `$${formatPrice(model.pricing.videoPerSecond["720p"])}/sec`
+          : `${model.pricing.inputPer1M === null ? "-" : `$${formatPrice(model.pricing.inputPer1M)}`} / ${
+              model.pricing.outputPer1M === null ? "-" : `$${formatPrice(model.pricing.outputPer1M)}`
+            }`;
+    return `| \`${model.id}\` | ${model.vendor} | ${model.category} | ${context} | ${model.capabilities.join(", ") || "-"} | ${price} |`;
+  };
+
+  return [
+    `# NormaHub catalog — ${catalog.models.length} models`,
+    "",
+    `Source: ${catalog.source}; fetched ${catalog.fetchedAt}` +
+      (catalog.updatedAt ? `; upstream updated ${catalog.updatedAt}` : ""),
+    catalog.warning ? `\n> ${catalog.warning}` : "",
+    "",
+    "| Model | Vendor | Kind | Context | Capabilities | Price (USD) |",
+    "|---|---|---|---|---|---|",
+    ...catalog.models.map(line),
+    "",
+    "Text prices are per 1M tokens (input / output). Media prices are per image or per video second.",
+    "Cards and examples: https://normahub.cc/models",
+  ].join("\n");
+}
+
+export async function handleReadResource(
+  uri: string
+): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> {
   if (uri === "normahub://models") {
-    // Generate both structured JSON representation and clean Markdown summary
-    const modelsMarkdown = [
-      "# NormaHub Active Models Catalog (30 Models)",
-      "",
-      "Direct API access to 30 AI models (Claude, DeepSeek, GPT, SeeDance) without VPN, billed in rubles with RF cards / SBP.",
-      "",
-      "| Model ID | Provider | Context | Capabilities | Input / 1M | Output / 1M | Fixed |",
-      "|---|---|---|---|---|---|---|",
-      ...NORMAHUB_MODELS.map((m) => {
-        const inPrice = m.pricing.inputPer1M || "-";
-        const outPrice = m.pricing.outputPer1M || "-";
-        const fixPrice = m.pricing.fixed || "-";
-        return `| \`${m.id}\` | ${m.family} | ${m.context} | ${m.capabilities.join(", ")} | ${inPrice} | ${outPrice} | ${fixPrice} |`;
-      }),
-      "",
-      "Official Catalog: https://normahub.cc/models",
-    ].join("\n");
-
-    const payload = {
-      total_models: NORMAHUB_MODELS.length,
-      gateway: "https://api.normahub.cc/v1",
-      models: NORMAHUB_MODELS,
-      markdown_summary: modelsMarkdown,
-    };
-
+    const catalog = await loadCatalog();
     return {
       contents: [
         {
-          uri: "normahub://models",
-          mimeType: "application/json",
-          text: JSON.stringify(payload, null, 2),
-        },
-      ],
-    };
-  }
-
-  if (uri === "normahub://status") {
-    const status = await apiClient.getGatewayStatus();
-
-    const statusMarkdown = [
-      "# NormaHub Gateway Status",
-      "",
-      `- **Status:** ${status.status.toUpperCase()}`,
-      `- **Ping Latency:** ${status.pingMs} ms`,
-      `- **Base URL:** ${status.baseUrl}`,
-      `- **Active Models:** ${status.activeModelsCount}`,
-      `- **Direct Russian Routing (No VPN):** ${status.directRussianRouting ? "Enabled" : "Disabled"}`,
-      `- **Ruble Billing / SBP / Mir:** ${status.rubleBilling ? "Active" : "Disabled"}`,
-      `- **Checked At:** ${status.timestamp}`,
-      "",
-      "### API Endpoints",
-      `- Chat Completions: \`${status.endpoints.chat}\``,
-      `- Responses API (Streaming): \`${status.endpoints.responses}\``,
-      `- Messages API (Claude): \`${status.endpoints.messages}\``,
-      `- Video Generations: \`${status.endpoints.videos}\``,
-      `- Video Task Status: \`${status.endpoints.videoStatus}\``,
-      `- Image Generations: \`${status.endpoints.images}\``,
-      `- Model Catalog: \`${status.endpoints.models}\``,
-    ].join("\n");
-
-    return {
-      contents: [
-        {
-          uri: "normahub://status",
+          uri,
           mimeType: "application/json",
           text: JSON.stringify(
             {
-              ...status,
-              markdown_summary: statusMarkdown,
+              total_models: catalog.models.length,
+              source: catalog.source,
+              fetched_at: catalog.fetchedAt,
+              upstream_updated_at: catalog.updatedAt ?? null,
+              warning: catalog.warning ?? null,
+              gateway: "https://api.normahub.cc/v1",
+              models: catalog.models,
+              markdown_summary: markdownTable(catalog),
             },
             null,
             2
@@ -101,5 +94,39 @@ export async function handleReadResource(uri: string): Promise<any> {
     };
   }
 
-  throw new Error(`Resource with URI "${uri}" not found.`);
+  if (uri === "normahub://status") {
+    const catalog = await loadCatalog();
+    const status = await apiClient.getGatewayStatus(catalog.models.length);
+
+    const markdown = [
+      "# NormaHub gateway status",
+      "",
+      `- Reachability: ${status.status}`,
+      `- Models call latency: ${status.pingMs} ms`,
+      `- Base URL: ${status.baseUrl}`,
+      `- Models in catalog: ${status.activeModelsCount} (${catalog.source})`,
+      `- Checked at: ${status.timestamp}`,
+      "",
+      "## Endpoints",
+      `- Chat: \`${status.endpoints.chat}\``,
+      `- Responses: \`${status.endpoints.responses}\``,
+      `- Messages: \`${status.endpoints.messages}\``,
+      `- Images: \`${status.endpoints.images}\``,
+      `- Videos: \`${status.endpoints.videos}\``,
+      `- Video status: \`${status.endpoints.videoStatus}\``,
+      `- Models: \`${status.endpoints.models}\``,
+    ].join("\n");
+
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify({ ...status, markdown_summary: markdown }, null, 2),
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Unknown resource URI: ${uri}. Available: normahub://models, normahub://status.`);
 }

@@ -14,11 +14,15 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
       - name: Build TypeScript
         run: npm run build
-      - name: Run Tests
+      - name: Release preflight (name, versions, server.json)
+        run: npm run check:release
+      - name: Type-check tests and run the suite
         run: npm test
+      - name: Verify the published tarball contents
+        run: npm pack --dry-run

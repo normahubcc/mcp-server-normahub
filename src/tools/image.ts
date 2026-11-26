@@ -1,67 +1,75 @@
 /**
- * MCP Tool: generate_image
- * Generates images using GPT Image Flare or Grok Imagine Image.
+ * MCP tool: image generation.
  */
 
 import { apiClient } from "../client.js";
+import { loadCatalog, requireModel } from "../catalog.js";
+import { optionalEnum, optionalNumber, optionalString, requiredString } from "../args.js";
+
+const SIZES = ["1024x1024", "1536x1024", "1024x1536", "512x512"] as const;
 
 export const IMAGE_TOOL_DEFINITION = {
   name: "normahub_generate_image",
-  description: "Generate images using GPT Image or Grok Imagine Image via NormaHub API.",
+  description:
+    "Generate images with NormaHub image models (GPT Image, Grok Imagine Image). " +
+    "Returns the image URL or inline image data, with the estimated cost per generation.",
   inputSchema: {
     type: "object",
     properties: {
-      prompt: {
-        type: "string",
-        description: "Visual prompt describing the image to generate",
-      },
+      prompt: { type: "string", description: "What to draw: subject, style, composition, lighting, text if any." },
       model: {
         type: "string",
-        description: "Image model ID (gpt-image-2.5-flare, grok-imagine-image-2.0)",
-        default: "gpt-image-2.5-flare",
+        description: "Image model id from normahub_list_models (category=image).",
       },
+      size: { type: "string", enum: [...SIZES], description: "Output size, default 1024x1024." },
+      n: { type: "number", description: "Number of images, 1–4 (default 1)." },
     },
     required: ["prompt"],
   },
 };
 
-export async function handleImageTool(args: any): Promise<any> {
-  const model = args.model || "gpt-image-2";
-  const res: any = await apiClient.generateImage(args.prompt, model);
+export async function handleImageTool(
+  args: unknown
+): Promise<{ content: Array<Record<string, unknown>>; isError?: true }> {
+  const prompt = requiredString(args, "prompt");
+  const catalog = await loadCatalog();
 
-  // NormaHub returns image either in result.data or top-level data array
-  const imgItem = res?.result?.data?.[0] || res?.data?.[0];
-  const url = imgItem?.url || "";
-  const b64 = imgItem?.b64_json || "";
-  const mimeType = imgItem?.mime_type || "image/png";
+  const requested = optionalString(args, "model");
+  const model = requested
+    ? requireModel(catalog, requested, "image")
+    : catalog.models.find((m) => m.category === "image");
+  if (!model) {
+    throw new Error(
+      "The catalog reports no image models right now. Call normahub_list_models with category=image."
+    );
+  }
 
-  if (url) {
+  const size = optionalEnum(args, "size", SIZES) ?? "1024x1024";
+  const n = optionalNumber(args, "n", { min: 1, max: 4 }) ?? 1;
+
+  const response = await apiClient.generateImage(prompt, model.id, { size, n });
+
+  const items = response?.data ?? [];
+  const price = model.pricing.imagePerGeneration;
+  const costLine =
+    price === null ? "" : `\nEstimated list cost: $${(price * n).toFixed(4)} USD for ${n} image(s).`;
+  const caption = `Image generated — ${model.id}, ${size}, ${n} image(s).${costLine}`;
+
+  if (items.length === 0) {
     return {
-      content: [
-        {
-          type: "text",
-          text: `Image generated with ${model}:\n${url}`,
-        },
-      ],
-    };
-  } else if (b64) {
-    return {
-      content: [
-        {
-          type: "image",
-          data: b64,
-          mimeType,
-        },
-      ],
+      content: [{ type: "text", text: `${caption}\nThe gateway returned no image data.` }],
+      isError: true,
     };
   }
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: `Image generated with ${model} (Task ID: ${res?.id || "ok"}).`,
-      },
-    ],
-  };
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: caption }];
+  for (const item of items) {
+    if (item.url) {
+      content.push({ type: "text", text: item.url });
+    } else if (item.b64_json) {
+      content.push({ type: "image", data: item.b64_json, mimeType: "image/png" });
+    }
+  }
+
+  return { content };
 }

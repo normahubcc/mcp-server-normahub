@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.normahubcc/mcp-server-normahub",
+  "description": "NormaHub MCP server: chat, image, video and audio models with a live model catalog.",
+  "version": "0.2.6",
+  "repository": {
+    "url": "https://github.com/normahubcc/mcp-server-normahub",
+    "source": "github"
+  },
+  "websiteUrl": "https://normahub.cc",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@normahub/mcp-server",
+      "version": "0.2.6",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NORMAHUB_API_KEY",
+          "description": "API key from https://normahub.cc/dashboard. Required for chat, image, video and audio tools.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "NORMAHUB_BASE_URL",
+          "description": "API base URL. Default: https://api.normahub.cc/v1",
+          "default": "https://api.normahub.cc/v1"
+        },
+        {
+          "name": "NORMAHUB_DEFAULT_MODEL",
+          "description": "Model used by normahub_prompt_model when the caller omits one.",
+          "default": "claude-sonnet-5-5"
+        },
+        {
+          "name": "NORMAHUB_OFFLINE",
+          "description": "Set to 1 to skip the live catalog and use the bundled snapshot.",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

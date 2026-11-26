@@ -1,84 +1,133 @@
 /**
- * MCP Tool: transcribe_audio
- * Transcribes audio and voice notes using Whisper via NormaHub API.
+ * MCP tool: audio transcription (Whisper).
+ *
+ * Two real limits are enforced here instead of at the provider: the 25 MB
+ * request cap and the download size, because an agent happily passes a two-hour
+ * podcast and the failure then costs a round trip (and sometimes money).
  */
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { apiClient } from "../client.js";
+import { ToolInputError } from "../errors.js";
+import { optionalString } from "../args.js";
+
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 export const AUDIO_TOOL_DEFINITION = {
   name: "normahub_transcribe_audio",
-  description: "Transcribe audio recordings, voice notes, and video soundtracks to text using OpenAI Whisper via NormaHub API without VPN. Accepts local file path or public HTTP URL.",
+  description:
+    "Transcribe an audio file (voice note, call recording, video soundtrack) to text with Whisper through NormaHub. " +
+    "Accepts a local path readable by this server or a public URL; files up to 25 MB.",
   inputSchema: {
     type: "object",
     properties: {
       file_path: {
         type: "string",
-        description: "Absolute or relative path to local audio file (.mp3, .wav, .m4a, .ogg, .oga, .mp4)",
+        description: "Path to a local audio file (.mp3, .wav, .m4a, .ogg, .flac, .mp4, .webm).",
       },
-      url: {
-        type: "string",
-        description: "Public HTTP/HTTPS URL of the audio file (used if file_path is omitted)",
-      },
-      model: {
-        type: "string",
-        description: "Whisper model ID to use (default: whisper-1)",
-        default: "whisper-1",
-      },
-      language: {
-        type: "string",
-        description: "Two-letter ISO language code (e.g. 'ru' for Russian, 'en' for English). Optional, auto-detected if omitted.",
-      },
-      prompt: {
-        type: "string",
-        description: "Optional context prompt or dictionary hints to improve transcription accuracy of domain terms.",
-      },
+      url: { type: "string", description: "Public http(s) URL of the audio file, used when file_path is omitted." },
+      model: { type: "string", description: "Whisper model id (default whisper-1)." },
+      language: { type: "string", description: "ISO-639-1 language code such as ru or en; auto-detected when omitted." },
+      prompt: { type: "string", description: "Vocabulary hints or names to improve recognition of domain terms." },
     },
   },
 };
 
-export async function handleAudioTool(args: any): Promise<any> {
-  const model = args.model || "whisper-1";
-  let buffer: Buffer;
-  let filename = "audio.mp3";
+function assertSize(bytes: number, source: string): void {
+  if (bytes === 0) throw new ToolInputError(`Audio from ${source} is empty.`);
+  if (bytes > MAX_AUDIO_BYTES) {
+    throw new ToolInputError(
+      `Audio from ${source} is ${(bytes / 1024 / 1024).toFixed(1)} MB, over the 25 MB limit. ` +
+        "Split it or compress it before transcribing."
+    );
+  }
+}
 
-  if (args.file_path) {
-    const resolvedPath = path.resolve(args.file_path);
-    if (!fs.existsSync(resolvedPath)) {
-      throw new Error(`Audio file not found at path: ${args.file_path}`);
-    }
-    buffer = fs.readFileSync(resolvedPath);
-    filename = path.basename(resolvedPath);
-  } else if (args.url) {
-    const resp = await fetch(args.url);
-    if (!resp.ok) {
-      throw new Error(`Failed to download audio from URL: ${args.url} (HTTP ${resp.status})`);
-    }
-    const arrBuf = await resp.arrayBuffer();
-    buffer = Buffer.from(arrBuf);
-    filename = path.basename(new URL(args.url).pathname) || "downloaded_audio.mp3";
-  } else {
-    throw new Error("Either 'file_path' or 'url' must be provided for audio transcription.");
+async function readLocal(filePath: string): Promise<{ buffer: Buffer; filename: string }> {
+  const resolved = path.resolve(filePath);
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    throw new ToolInputError(`Audio file not found: ${filePath}`);
+  }
+  if (!stat.isFile()) throw new ToolInputError(`Not a regular file: ${filePath}`);
+  assertSize(stat.size, filePath);
+  return { buffer: fs.readFileSync(resolved), filename: path.basename(resolved) };
+}
+
+async function download(url: string): Promise<{ buffer: Buffer; filename: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ToolInputError(`Invalid URL: ${url}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ToolInputError("Only http(s) URLs are supported for remote audio.");
   }
 
-  const result = await apiClient.transcribeAudio(
-    buffer,
-    filename,
+  const response = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`Downloading ${url} failed with HTTP ${response.status}.`);
+  }
+
+  const declared = Number(response.headers.get("content-length") ?? "0");
+  if (declared > MAX_AUDIO_BYTES) assertSize(declared, url);
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  assertSize(buffer.length, url);
+  const filename =
+    path.basename(parsed.pathname) ||
+    (response.headers.get("content-type")?.includes("wav") ? "audio.wav" : "audio.mp3");
+  return { buffer, filename };
+}
+
+export async function handleAudioTool(
+  args: unknown
+): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  const filePath = optionalString(args, "file_path");
+  const url = optionalString(args, "url");
+  const model = optionalString(args, "model") ?? "whisper-1";
+  const language = optionalString(args, "language");
+  const prompt = optionalString(args, "prompt");
+
+  if (!filePath && !url) {
+    throw new ToolInputError("Provide 'file_path' or 'url'.");
+  }
+
+  const source = filePath ? await readLocal(filePath) : await download(url as string);
+  const result = await apiClient.transcribeAudio(source.buffer, source.filename, {
     model,
-    args.language,
-    args.prompt
-  );
+    language,
+    prompt,
+  });
 
-  const text = result?.text || "";
-  const detectedLang = result?.language ? ` (Language: ${result.language})` : "";
+  const text = typeof result.text === "string" ? result.text.trim() : "";
+  if (!text) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Transcription of ${source.filename} returned no text. The file may contain no speech or be unsupported.`,
+        },
+      ],
+    };
+  }
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: `🎙️ Transcription Result${detectedLang}:\n\n${text}`,
-      },
-    ],
-  };
+  const meta = [
+    `file: ${source.filename}`,
+    `model: ${model}`,
+    typeof result.language === "string" ? `language: ${result.language}` : null,
+    `${text.split(/\s+/).length} words`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join(" | ");
+
+  return { content: [{ type: "text", text: `[${meta}]\n\n${text}` }] };
 }

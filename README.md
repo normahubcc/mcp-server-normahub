@@ -8,72 +8,57 @@
 
 [![npm version](https://img.shields.io/npm/v/@normahub/mcp-server?style=flat-square&color=CB3837&logo=npm)](https://www.npmjs.com/package/@normahub/mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/@normahub/mcp-server?style=flat-square&color=blue)](https://www.npmjs.com/package/@normahub/mcp-server)
-[![Node](https://img.shields.io/badge/node-18+-green?style=flat-square)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-22%2B-green?style=flat-square)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
-[![MCP Standard](https://img.shields.io/badge/MCP-1.0-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.normahubcc-blueviolet?style=flat-square)](https://registry.modelcontextprotocol.io)
 
-Сервер [Model Context Protocol (MCP)](https://modelcontextprotocol.io) для API [NormaHub](https://normahub.cc).
+MCP-сервер для API [NormaHub](https://normahub.cc): текстовые модели, генерация изображений, видео и расшифровка аудио — из Claude Desktop, Cursor, Zed, Continue и любого другого MCP-клиента.
 
-Предоставляет инструменты (Tools), ресурсы (Resources) и шаблоны промптов (Prompts) для подключения моделей (DeepSeek, Claude, GPT, SeeDance Video) к **Claude Desktop**, **Cursor**, **Windsurf** и другим MCP-клиентам.
+Ключевое отличие от «обёртки над OpenAI»: **каталог моделей и цены берутся из живого API**, а не из захардкоженного списка. Модель, которой больше нет в каталоге, не будет молча вызвана по устаревшему id — сервер скажет об этом и предложит существующие.
 
-Поддерживает два вида транспорта:
-- **Stdio** — локальный запуск через `npx` в IDE и десктопных клиентах.
-- **SSE (Server-Sent Events)** — сетевой HTTP-транспорт для Docker, Kubernetes и удаленных серверов.
+## Что внутри
 
----
+**8 инструментов**
 
-## Архитектура сервера
-
-```
-┌────────────────────────────────────────────────────────┐
-│                  NormaHub MCP Server                   │
-└───────────────────────────┬────────────────────────────┘
-                            │
-     ┌──────────────────────┼──────────────────────┐
-     ▼                      ▼                      ▼
-  TOOLS                  RESOURCES              PROMPTS
-  • normahub_prompt_model• normahub://models    • review_code
-  • normahub_image_to_video • normahub://status • direct_video_scene
-  • normahub_generate_video                     • cost_optimize_route
-  • normahub_generate_image
-  • normahub_list_models
-```
-
----
-
-## Возможности
-
-### 1. Tools (Инструменты)
-
-| Инструмент | Описание | Основные параметры |
+| Инструмент | Назначение | Ключевые аргументы |
 |---|---|---|
-| `normahub_prompt_model` | Вызов LLM (диалоги и история сообщений) | `model`, `prompt`, `messages`, `system`, `temperature` |
-| `normahub_image_to_video` | Генерация видео из статичного изображения (I2V) через SeeDance | `image_url` (URL или data URI), `prompt`, `model` |
-| `normahub_generate_video` | Генерация видео из текста (T2V) через SeeDance / Grok Video | `prompt`, `model`, `duration`, `aspect_ratio` |
-| `normahub_generate_image` | Генерация изображений | `prompt`, `model` |
-| `normahub_list_models` | Список подключенных моделей и тарифов | — |
+| `normahub_list_models` | Живой каталог: id, вендор, модальность, контекст, цены | `category`, `query`, `limit` |
+| `normahub_estimate_cost` | Оценка стоимости до вызова: токены/кэш, изображения, секунды видео | `model`, `input_tokens`, `output_tokens`, `image_count`, `video_seconds`, `resolution` |
+| `normahub_prompt_model` | Запрос к LLM, возвращает ответ, usage и оценку стоимости | `model`, `prompt`, `messages`, `system`, `temperature`, `max_tokens` |
+| `normahub_generate_image` | Генерация изображения, возвращает URL или inline-данные | `prompt`, `model`, `size`, `n` |
+| `normahub_generate_video` | Text-to-video с опросом задачи и progress-уведомлениями | `prompt`, `model`, `duration`, `aspect_ratio`, `resolution` |
+| `normahub_image_to_video` | Image-to-video | `image_url`, `prompt`, `model`, `duration` |
+| `normahub_transcribe_audio` | Whisper: локальный файл или URL, до 25 МБ | `file_path`, `url`, `language`, `prompt` |
+| `normahub_get_balance` | Баланс и тариф; ошибка авторизации возвращается как ошибка | — |
 
-### 2. Resources (Ресурсы)
+**2 ресурса:** `normahub://models` (каталог с markdown-таблицей), `normahub://status` (доступность шлюза, задержка вызова моделей).
 
-- **`normahub://models`** — структурированный каталог поддерживаемых моделей, контекстных окон, capabilities и тарифов (JSON и Markdown).
-- **`normahub://status`** — статус шлюза, latency ping и список активных маршрутов.
+**3 шаблона промптов:** `review_code`, `direct_video_scene`, `cost_optimize_route`.
 
-### 3. Prompts (Шаблоны)
+## Транспорты
 
-- **`review_code`** — шаблон для код-ревью (архитектура, безопасность, производительность, diff).
-- **`direct_video_scene`** — шаблон для формирования сценария генерации видео (оптика, свет, физика камеры) под SeeDance.
-- **`cost_optimize_route`** — подбор наиболее экономичной модели под задачу.
+| Транспорт | Адрес | Когда использовать |
+|---|---|---|
+| **stdio** | процесс по stdin/stdout | локальные клиенты: Claude Desktop, Cursor, Zed, Continue |
+| **Streamable HTTP** | `POST /mcp` | удалённый сервер, несколько пользователей. Это транспорт, который рекомендует спецификация MCP |
+| **HTTP + SSE** (устаревший) | `GET /sse`, `POST /messages` | только для клиентов, которые ещё не умеют Streamable HTTP |
+| **Health** | `GET /health` | пробы в Docker/Kubernetes: версия, число инструментов, активные SSE-сессии |
 
----
+## Установка
 
-## Быстрый старт
+Требуется Node.js 22 или новее.
 
-### Claude Desktop (Stdio)
+```bash
+npx -y @normahub/mcp-server
+```
 
-Добавьте сервер в конфигурационный файл Claude Desktop:
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux:** `~/.config/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+Ключ выдаётся в [личном кабинете](https://normahub.cc/dashboard). Каталог и оценка стоимости работают и без ключа; платные вызовы без него вернут понятную ошибку.
+
+### Claude Desktop (stdio)
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS),
+`~/.config/Claude/claude_desktop_config.json` (Linux),
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -81,77 +66,93 @@
     "normahub": {
       "command": "npx",
       "args": ["-y", "@normahub/mcp-server"],
-      "env": {
-        "NORMAHUB_API_KEY": "nr_hub_..."
-      }
+      "env": { "NORMAHUB_API_KEY": "nr_hub_..." }
     }
   }
 }
 ```
 
----
+### Cursor
 
-### Cursor IDE
+`Settings → Tools & MCP → New MCP Server`, затем в `~/.cursor/mcp.json`:
 
-В настройках **Settings > Features > MCP > Add New MCP Server**:
+```json
+{
+  "mcpServers": {
+    "normahub": {
+      "command": "npx",
+      "args": ["-y", "@normahub/mcp-server"],
+      "env": { "NORMAHUB_API_KEY": "nr_hub_..." }
+    }
+  }
+}
+```
 
-1. **Name:** `normahub`
-2. **Type:** `command`
-3. **Command:** `npx -y @normahub/mcp-server`
-4. **Environment Variables:** `NORMAHUB_API_KEY=nr_hub_...`
+Готовые конфиги для Zed и Continue — в [`examples/`](examples/).
 
----
-
-### Готовые шаблоны конфигураций
-
-Готовые JSON-файлы конфигурации для **Claude Desktop**, **Cursor (.cursor/mcp.json)**, **Zed** и **Continue.dev** доступны в директории [`examples/`](examples/).
-
----
-
-## Сетевой запуск (SSE Transport)
-
-Для совместного использования командой или работы в контейнерах:
-
-### Локальный запуск SSE:
+### Удалённый сервер (Streamable HTTP)
 
 ```bash
 git clone https://github.com/normahubcc/mcp-server-normahub.git
 cd mcp-server-normahub
-npm install
-npm run build
-
-export NORMAHUB_API_KEY="nr_hub_..."
-npm run start:sse
-```
-
-Сервер будет доступен на порту 3001:
-- SSE поток: `http://localhost:3001/sse`
-- POST сообщений: `http://localhost:3001/messages`
-- Health check: `http://localhost:3001/health`
-
-### Запуск в Docker:
-
-```bash
-docker build -t normahub-mcp-server .
-docker run -d \
+docker build -t normahub-mcp .
+docker run -d --name normahub-mcp \
   -p 3001:3001 \
-  -e NORMAHUB_API_KEY="nr_hub_..." \
-  --name normahub-mcp \
-  normahub-mcp-server
+  -e NORMAHUB_API_KEY=nr_hub_... \
+  normahub-mcp
 ```
 
----
+Клиент подключается к `http://host:3001/mcp`. Ключ читается из окружения сервера и никогда не передаётся в запросах клиента — это позволяет держать один ключ на команду.
 
-## Отладка через MCP Inspector
+Локально без Docker:
 
 ```bash
-npm run inspect
+npm run build
+NORMAHUB_API_KEY=nr_hub_... npm run start:http
 ```
 
-Команда запустит локальный веб-интерфейс MCP Inspector для интерактивного тестирования вызовов инструментов и чтения ресурсов.
+## Переменные окружения
 
----
+| Переменная | По умолчанию | Смысл |
+|---|---|---|
+| `NORMAHUB_API_KEY` | — | ключ API; нужен для платных инструментов |
+| `NORMAHUB_BASE_URL` | `https://api.normahub.cc/v1` | другой шлюз или прокси |
+| `NORMAHUB_DEFAULT_MODEL` | `claude-sonnet-5-5` | модель для `normahub_prompt_model` без аргумента `model` |
+| `NORMAHUB_DEFAULT_VIDEO_MODEL` | первая видео-модель каталога | модель для видео без аргумента `model` |
+| `NORMAHUB_TIMEOUT_MS` | `120000` | таймаут текстового запроса |
+| `NORMAHUB_OFFLINE` | `0` | `1` — не ходить в сеть за каталогом, использовать встроенный снимок |
+| `PORT` / `HOST` | `3001` / `0.0.0.0` | только для HTTP-транспорта |
+
+## Каталог и цены
+
+Каталог запрашивается у `https://api.normahub.cc/api/v1/public/models` и живёт в памяти 10 минут. Порядок источников: живой ответ → последний успешный ответ → встроенный снимок из пакета. В ответах инструментов видно, какой источник использован (`source: live` / `source: bundled`) и когда каталог обновлялся на стороне API.
+
+Цены в каталоге — **USD-лист**, как их отдаёт API. Списание происходит в рублях по курсу шлюза, поэтому `normahub_estimate_cost` показывает оценку и напоминает проверить счёт.
+
+## Разработка
+
+```bash
+npm ci
+npm test          # tsc + 30 тестов: каталог, инструменты, протокол, stdio, HTTP/SSE
+npm run build
+npm pack --dry-run
+```
+
+Тесты транспортов поднимают настоящий процесс `dist/index.js` через stdio и реальный HTTP-сервер на свободном порту, а не только проверяют фабрику сервера. Сеть в тестах не используется: ответ API подменяется фикстурой.
+
+Обновление пакета:
+
+1. поднять `version` в `package.json`, `server.json` и в `packages[0].version` (тест сверит их между собой);
+2. `npm test`, `npm pack --dry-run`;
+3. `npm publish`, затем `mcp-publisher publish` для реестра MCP.
+
+## Ограничения, о которых стоит знать
+
+- `updated_at` в публичном каталоге может отставать от фактических изменений — сервер показывает его как есть, а не выдаёт за свежесть.
+- Видео тарифицируется посекундно, но в карточке модели цена иногда отображается нулевой; оценка строится по полю `video_price_*_per_sec` и предупреждает, если его нет.
+- Whisper принимает файлы до 25 МБ — ограничение проверяется до загрузки, а не после отказа провайдера.
+- SSE-сессии ограничены 64 одновременными подключениями (`maxSessions`), чтобы брошенные соединения не съедали память.
 
 ## Лицензия
 
-MIT License. См. [LICENSE](LICENSE).
+MIT. См. [LICENSE](LICENSE).

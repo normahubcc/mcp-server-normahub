@@ -1,10 +1,12 @@
 /**
- * NormaHub API HTTP Client
- * Uses native fetch (Node 18+) without external HTTP libraries.
+ * NormaHub API HTTP client.
+ * Native fetch only — no HTTP dependency in a package that users install with npx.
  */
 
 import { CONFIG } from "./config.js";
-import {
+import { NormaHubApiError } from "./errors.js";
+import { USER_AGENT } from "./version.js";
+import type {
   NormaHubChatRequest,
   NormaHubChatResponse,
   NormaHubGatewayStatus,
@@ -12,243 +14,321 @@ import {
   NormaHubVideoTask,
 } from "./types.js";
 
+interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
+function errorMessageFrom(body: string, fallback: string): { message: string; code?: string } {
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const error = parsed.error as Record<string, unknown> | string | undefined;
+    if (typeof error === "string") return { message: error };
+    if (error) {
+      const message = typeof error.message === "string" ? error.message : undefined;
+      const code = typeof error.code === "string" ? error.code : undefined;
+      if (message) return { message, code };
+    }
+    if (typeof parsed.message === "string") return { message: parsed.message };
+    if (typeof parsed.detail === "string") return { message: parsed.detail };
+  } catch {
+    /* body was not JSON — fall through to plain text */
+  }
+  return { message: body.trim() || fallback };
+}
+
 export class NormaHubClient {
   private get headers(): Record<string, string> {
     return {
-      "Authorization": `Bearer ${CONFIG.apiKey}`,
+      Authorization: `Bearer ${CONFIG.apiKey}`,
       "Content-Type": "application/json",
-      "User-Agent": "NormaHub-MCP-Server/0.1.0",
+      "User-Agent": USER_AGENT,
     };
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${CONFIG.baseUrl}/${endpoint.replace(/^\/+/, "")}`;
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...this.headers,
-        ...(options.headers || {}),
-      },
-    });
+  /** Fails early with an actionable message instead of a 401 from upstream. */
+  private requireApiKey(): void {
+    if (!CONFIG.apiKey) {
+      throw new NormaHubApiError(
+        "NORMAHUB_API_KEY is not configured. Set it in the MCP client configuration " +
+          "(environment block) — keys are issued at https://normahub.cc/dashboard.",
+        401
+      );
+    }
+  }
 
-    const reqId = response.headers.get("x-request-id");
+  async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    this.requireApiKey();
+
+    const { timeoutMs = CONFIG.timeoutMs, headers, ...init } = options;
+    const url = `${CONFIG.baseUrl}/${endpoint.replace(/^\/+/, "")}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: { ...this.headers, ...(headers as Record<string, string> | undefined) },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new NormaHubApiError(`Request to ${url} timed out after ${timeoutMs} ms.`);
+      }
+      throw new NormaHubApiError(
+        `Cannot reach NormaHub API at ${url}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const requestId =
+      response.headers.get("x-request-id") ?? response.headers.get("request-id") ?? undefined;
+
     if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
-      let parsedMsg = errorText;
-      let parsedCode = "";
-      try {
-        const errJson = JSON.parse(errorText);
-        parsedMsg = errJson.error?.message || errorText;
-        parsedCode = errJson.error?.code || "";
-      } catch {}
-      const suffix = reqId ? ` [Request ID: ${reqId}]` : "";
-      throw new Error(
-        `NormaHub API Error (${response.status}${parsedCode ? ` / ${parsedCode}` : ""}): ${parsedMsg}${suffix}`
+      const body = await response.text().catch(() => "");
+      const { message, code } = errorMessageFrom(body, response.statusText);
+      const suffix = requestId ? ` [request id: ${requestId}]` : "";
+      throw new NormaHubApiError(
+        `NormaHub API ${response.status}${code ? ` (${code})` : ""}: ${message}${suffix}`,
+        response.status,
+        code,
+        requestId
       );
     }
 
-    const data: any = await response.json();
-    if (reqId && typeof data === "object" && data !== null) {
-      data._requestId = reqId;
+    const text = await response.text();
+    if (!text) return {} as T;
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new NormaHubApiError(
+        `NormaHub API returned non-JSON for ${url} (first 120 chars): ${text.slice(0, 120)}`,
+        response.status,
+        undefined,
+        requestId
+      );
+    }
+    if (requestId && typeof data === "object" && data !== null) {
+      (data as Record<string, unknown>)._requestId = requestId;
     }
     return data as T;
   }
 
-  /**
-   * Prompts text/code models via /v1/chat/completions.
-   */
-  async createChatCompletion(request: NormaHubChatRequest): Promise<NormaHubChatResponse> {
+  createChatCompletion(request: NormaHubChatRequest): Promise<NormaHubChatResponse> {
     return this.request<NormaHubChatResponse>("chat/completions", {
       method: "POST",
       body: JSON.stringify({ ...request, stream: false }),
     });
   }
 
-  /**
-   * Generates images using models like gpt-image-2.5-flare or grok-imagine-image-2.0
-   */
-  async generateImage(prompt: string, model: string = "gpt-image-2.5-flare"): Promise<NormaHubImageResponse> {
+  generateImage(
+    prompt: string,
+    model: string,
+    options: { size?: string; n?: number } = {}
+  ): Promise<NormaHubImageResponse> {
     return this.request<NormaHubImageResponse>("images/generations", {
       method: "POST",
       body: JSON.stringify({
         model,
         prompt,
-        n: 1,
-        size: "1024x1024",
+        n: options.n ?? 1,
+        size: options.size ?? "1024x1024",
       }),
+      timeoutMs: 180_000,
     });
   }
 
   /**
-   * Submits a video generation task (SeeDance 2.5 / Grok Video)
-   * Official NormaHub endpoint is POST /v1/videos with model & prompt
+   * Submits a video generation task. `POST /v1/videos` is the documented route;
+   * the legacy `/v1/videos/generations` is tried only when the route is missing,
+   * never because an arbitrary error message contained "404".
    */
   async createVideoTask(
     prompt: string,
-    model: string = "seedance-2.5",
-    imageUrl?: string
+    model: string,
+    options: {
+      imageUrl?: string;
+      durationSeconds?: number;
+      aspectRatio?: string;
+      resolution?: string;
+    } = {}
   ): Promise<NormaHubVideoTask> {
-    const body: Record<string, any> = { model, prompt };
-    if (imageUrl) {
-      body.image_url = imageUrl;
-    }
+    const body: Record<string, unknown> = { model, prompt };
+    if (options.imageUrl) body.image_url = options.imageUrl;
+    if (options.durationSeconds !== undefined) body.duration = options.durationSeconds;
+    if (options.aspectRatio) body.aspect_ratio = options.aspectRatio;
+    if (options.resolution) body.resolution = options.resolution;
+
     try {
       return await this.request<NormaHubVideoTask>("videos", {
         method: "POST",
         body: JSON.stringify(body),
+        timeoutMs: 60_000,
       });
-    } catch (err: any) {
-      if (err?.message?.includes("404")) {
-        return await this.request<NormaHubVideoTask>("videos/generations", {
+    } catch (error) {
+      if (error instanceof NormaHubApiError && error.isMissingEndpoint) {
+        return this.request<NormaHubVideoTask>("videos/generations", {
           method: "POST",
           body: JSON.stringify(body),
+          timeoutMs: 60_000,
         });
       }
-      throw err;
+      throw error;
     }
   }
 
-  /**
-   * Submits an Image-to-Video generation task (SeeDance 2.5 / 2.0)
-   */
-  async createImageToVideoTask(
+  createImageToVideoTask(
     imageUrl: string,
     prompt: string,
-    model: string = "seedance-2.5"
+    model: string,
+    options: { durationSeconds?: number; aspectRatio?: string; resolution?: string } = {}
   ): Promise<NormaHubVideoTask> {
-    return this.createVideoTask(prompt, model, imageUrl);
+    return this.createVideoTask(prompt, model, { ...options, imageUrl });
   }
 
-  /**
-   * Checks the status of a video generation task
-   * Official NormaHub endpoint is GET /v1/videos/status/{taskId}
-   */
   async getVideoTaskStatus(taskId: string): Promise<NormaHubVideoTask> {
     try {
-      return await this.request<NormaHubVideoTask>(`videos/status/${taskId}`);
-    } catch (err: any) {
-      if (err?.message?.includes("404")) {
-        return await this.request<NormaHubVideoTask>(`videos/tasks/${taskId}`);
+      return await this.request<NormaHubVideoTask>(`videos/status/${encodeURIComponent(taskId)}`);
+    } catch (error) {
+      if (error instanceof NormaHubApiError && error.isMissingEndpoint) {
+        return this.request<NormaHubVideoTask>(`videos/tasks/${encodeURIComponent(taskId)}`);
       }
-      throw err;
+      throw error;
     }
   }
 
   /**
-   * Polls a video task until completion or timeout
+   * Polls until the task settles. `onPoll` lets the caller emit MCP progress
+   * notifications so a 3-minute render does not look like a hang.
    */
-  async pollVideoUntilDone(taskId: string, timeoutMs: number = 180_000): Promise<NormaHubVideoTask> {
-    const startTime = Date.now();
+  async pollVideoUntilDone(
+    taskId: string,
+    options: {
+      timeoutMs?: number;
+      onPoll?: (task: NormaHubVideoTask, elapsedMs: number) => void | Promise<void>;
+    } = {}
+  ): Promise<NormaHubVideoTask> {
+    const timeoutMs = options.timeoutMs ?? 240_000;
+    const startedAt = Date.now();
     let delayMs = 3000;
 
-    while (Date.now() - startTime < timeoutMs) {
+    while (Date.now() - startedAt < timeoutMs) {
       const task = await this.getVideoTaskStatus(taskId);
       if (task.status === "completed" || task.status === "failed") {
         return task;
       }
+      if (options.onPoll) await options.onPoll(task, Date.now() - startedAt);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      delayMs = Math.min(delayMs * 1.25, 8000);
+      delayMs = Math.min(Math.round(delayMs * 1.25), 10_000);
     }
 
-    throw new Error(`Video task ${taskId} timed out after ${timeoutMs / 1000} seconds`);
+    throw new NormaHubApiError(
+      `Video task ${taskId} did not finish within ${Math.round(timeoutMs / 1000)} s. ` +
+        `It may still complete — query it later with the task id.`
+    );
+  }
+
+  async getModels(): Promise<{ data?: Array<{ id?: string }> } & Record<string, unknown>> {
+    return this.request("models");
   }
 
   /**
-   * Gets models and account overview
+   * Balance is optional on the gateway. A 404 means "endpoint not offered";
+   * anything else (401/403/5xx) is a real failure and must be shown, because
+   * reporting "Active" for a rejected key is a lie the user pays for.
    */
-  async getModels(): Promise<any> {
-    return this.request<any>("models");
-  }
-
-  /**
-   * Gets account balance in RUB
-   */
-  async getBalance(): Promise<any> {
+  async getBalance(): Promise<Record<string, unknown> | null> {
     try {
-      return await this.request<any>("balance");
-    } catch {
-      return { balance: null, currency: "RUB", status: "active" };
+      return await this.request<Record<string, unknown>>("balance");
+    } catch (error) {
+      if (error instanceof NormaHubApiError && error.isMissingEndpoint) return null;
+      throw error;
     }
   }
 
-  /**
-   * Transcribes audio using Whisper via POST /v1/audio/transcriptions
-   */
   async transcribeAudio(
-    audioBuffer: Buffer,
+    audio: Buffer,
     filename: string,
-    model: string = "whisper-1",
-    language?: string,
-    prompt?: string
-  ): Promise<any> {
-    const boundary = "----NormaHubBoundary" + Math.random().toString(36).substring(2);
-    const crlf = "\r\n";
+    options: { model?: string; language?: string; prompt?: string } = {}
+  ): Promise<{ text?: string; language?: string } & Record<string, unknown>> {
+    this.requireApiKey();
 
-    let body = Buffer.from("");
-    const addField = (name: string, value: string) => {
-      const part = `--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`;
-      body = Buffer.concat([body, Buffer.from(part, "utf-8")]);
+    const safeName = filename.replace(/[\r\n"\\]/g, "_") || "audio.mp3";
+    const mime = mimeTypeFor(safeName);
+    const boundary = `----NormaHubBoundary${Math.random().toString(36).slice(2)}`;
+    const crlf = "\r\n";
+    const chunks: Buffer[] = [];
+
+    const field = (name: string, value: string) => {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}${crlf}Content-Disposition: form-data; name="${name}"${crlf}${crlf}${value}${crlf}`,
+          "utf-8"
+        )
+      );
     };
 
-    addField("model", model);
-    if (language) addField("language", language);
-    if (prompt) addField("prompt", prompt);
-
-    const fileHeader = Buffer.from(
-      `--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="${filename}"${crlf}Content-Type: application/octet-stream${crlf}${crlf}`,
-      "utf-8"
+    field("model", options.model ?? "whisper-1");
+    if (options.language) field("language", options.language);
+    if (options.prompt) field("prompt", options.prompt);
+    chunks.push(
+      Buffer.from(
+        `--${boundary}${crlf}Content-Disposition: form-data; name="file"; filename="${safeName}"${crlf}` +
+          `Content-Type: ${mime}${crlf}${crlf}`,
+        "utf-8"
+      ),
+      audio,
+      Buffer.from(`${crlf}--${boundary}--${crlf}`, "utf-8")
     );
-    const fileFooter = Buffer.from(`${crlf}--${boundary}--${crlf}`, "utf-8");
-
-    body = Buffer.concat([body, fileHeader, audioBuffer, fileFooter]);
 
     const url = `${CONFIG.baseUrl}/audio/transcriptions`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${CONFIG.apiKey}`,
+        Authorization: `Bearer ${CONFIG.apiKey}`,
         "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "User-Agent": "NormaHub-MCP-Server/0.2.5",
+        "User-Agent": USER_AGENT,
       },
-      body,
+      body: Buffer.concat(chunks),
+      signal: AbortSignal.timeout(CONFIG.timeoutMs),
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`Whisper API error (${response.status}): ${err}`);
+      const body = await response.text().catch(() => "");
+      const { message } = errorMessageFrom(body, response.statusText);
+      throw new NormaHubApiError(
+        `Transcription failed (${response.status}): ${message}`,
+        response.status
+      );
     }
 
-    return await response.json();
+    return (await response.json()) as { text?: string; language?: string };
   }
 
-  /**
-   * Measures gateway ping latency and connection health
-   */
-  async getGatewayStatus(): Promise<NormaHubGatewayStatus> {
-    const startTime = Date.now();
-    let status: "operational" | "degraded" | "unreachable" = "operational";
-    let pingMs = 0;
+  async getGatewayStatus(activeModelsCount: number): Promise<NormaHubGatewayStatus> {
+    const startedAt = Date.now();
+    let status: NormaHubGatewayStatus["status"] = "operational";
 
     try {
-      await this.getModels();
-      pingMs = Date.now() - startTime;
+      await this.request("models", { timeoutMs: 8000 });
     } catch {
-      pingMs = Date.now() - startTime;
       status = "degraded";
     }
 
     return {
       status,
-      pingMs,
+      pingMs: Date.now() - startedAt,
       baseUrl: CONFIG.baseUrl,
       timestamp: new Date().toISOString(),
-      activeModelsCount: 30,
+      activeModelsCount,
       directRussianRouting: true,
       rubleBilling: true,
       endpoints: {
         chat: `${CONFIG.baseUrl}/chat/completions`,
         responses: `${CONFIG.baseUrl}/responses`,
-        messages: `https://api.normahub.cc/v1/messages`,
+        messages: `${CONFIG.baseUrl}/messages`,
         images: `${CONFIG.baseUrl}/images/generations`,
         videos: `${CONFIG.baseUrl}/videos`,
         videoStatus: `${CONFIG.baseUrl}/videos/status/{taskId}`,
@@ -256,6 +336,24 @@ export class NormaHubClient {
       },
     };
   }
+}
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".mp4": "video/mp4",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".opus": "audio/opus",
+  ".flac": "audio/flac",
+  ".webm": "audio/webm",
+};
+
+export function mimeTypeFor(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  const ext = dot >= 0 ? filename.slice(dot).toLowerCase() : "";
+  return MIME_BY_EXTENSION[ext] ?? "application/octet-stream";
 }
 
 export const apiClient = new NormaHubClient();

@@ -1,98 +1,118 @@
 /**
- * MCP Tool: prompt_model
- * Prompts any of the 30 available LLMs on NormaHub.
+ * MCP tool: prompt an LLM through NormaHub.
  */
 
+import { CONFIG } from "../config.js";
 import { apiClient } from "../client.js";
+import { findModel, loadCatalog, requireModel } from "../catalog.js";
+import { ToolInputError } from "../errors.js";
+import { optionalMessages, optionalNumber, optionalString } from "../args.js";
 
 export const CHAT_TOOL_DEFINITION = {
   name: "normahub_prompt_model",
-  description: "Send a prompt to LLM models via NormaHub API (Claude, GPT, DeepSeek, Qwen).",
+  description:
+    "Send a prompt or a full chat history to a text model through NormaHub (Claude, GPT, Gemini, DeepSeek, Qwen, Grok). " +
+    "Returns the answer with token usage and the estimated USD cost of the call.",
   inputSchema: {
     type: "object",
     properties: {
       model: {
         type: "string",
-        description: "Model ID. Examples: claude-sonnet-5-5, deepseek-v4.1-flash, grok-4.7, glm-5.3-flash",
-        default: "claude-sonnet-5-5",
+        description:
+          "Model id from normahub_list_models (e.g. claude-sonnet-5-5, gpt-6-astra, deepseek-v4.1-flash-1017, gemini-4-argon).",
       },
       prompt: {
         type: "string",
-        description: "The prompt or task instruction for the AI model (required if messages is not provided)",
+        description: "User message. Ignored if the same text is already the last message in `messages`.",
       },
       messages: {
         type: "array",
-        description: "Full chat message history array: [{role: 'system'|'user'|'assistant', content: string}]",
+        description: "Full chat history: [{role: 'system'|'user'|'assistant', content: string}].",
         items: {
           type: "object",
           properties: {
-            role: {
-              type: "string",
-              enum: ["system", "user", "assistant"],
-              description: "Message author role",
-            },
-            content: {
-              type: "string",
-              description: "Message text content",
-            },
+            role: { type: "string", enum: ["system", "user", "assistant"] },
+            content: { type: "string" },
           },
           required: ["role", "content"],
         },
       },
-      system: {
-        type: "string",
-        description: "Optional system prompt instruction",
-      },
-      temperature: {
-        type: "number",
-        description: "Sampling temperature (0.0 to 1.0)",
-        default: 0.7,
-      },
-      max_tokens: {
-        type: "number",
-        description: "Optional max output tokens limit",
-      },
+      system: { type: "string", description: "System instruction. Prepended when messages has no system turn." },
+      temperature: { type: "number", description: "Sampling temperature, 0.0–2.0 (default 0.7)." },
+      max_tokens: { type: "number", description: "Maximum output tokens." },
     },
   },
 };
 
-export async function handleChatTool(args: any): Promise<any> {
-  const model = args.model || "claude-sonnet-5-5";
-  let messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
+export async function handleChatTool(
+  args: unknown
+): Promise<{ content: Array<{ type: "text"; text: string }> }> {
+  const catalog = await loadCatalog();
+  const requested = optionalString(args, "model") ?? CONFIG.defaultModel;
+  const model = requireModel(catalog, requested, "llm");
 
-  if (Array.isArray(args.messages) && args.messages.length > 0) {
-    messages = [...args.messages];
-    if (args.system && messages[0]?.role !== "system") {
-      messages.unshift({ role: "system", content: args.system });
-    }
-    if (args.prompt && messages[messages.length - 1]?.content !== args.prompt) {
-      messages.push({ role: "user", content: args.prompt });
-    }
-  } else if (args.prompt) {
-    if (args.system) {
-      messages.push({ role: "system", content: args.system });
-    }
-    messages.push({ role: "user", content: args.prompt });
-  } else {
-    throw new Error("Either 'prompt' or 'messages' array must be provided to normahub_prompt_model.");
+  const prompt = optionalString(args, "prompt");
+  const history = optionalMessages(args);
+  const system = optionalString(args, "system");
+  const temperature = optionalNumber(args, "temperature", { min: 0, max: 2 });
+  const maxTokens = optionalNumber(args, "max_tokens", { min: 1, max: 1_000_000 });
+
+  if (!prompt && !history) {
+    throw new ToolInputError("Provide either 'prompt' or a non-empty 'messages' array.");
+  }
+
+  const messages = history ? [...history] : [];
+  if (system && messages[0]?.role !== "system") messages.unshift({ role: "system", content: system });
+  if (prompt && messages[messages.length - 1]?.content !== prompt) {
+    messages.push({ role: "user", content: prompt });
+  }
+  if (messages.length === 0) {
+    throw new ToolInputError("The resulting conversation is empty.");
   }
 
   const response = await apiClient.createChatCompletion({
-    model,
+    model: model.id,
     messages,
-    temperature: args.temperature ?? 0.7,
-    max_tokens: args.max_tokens,
+    temperature: temperature ?? 0.7,
+    ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
   });
 
-  const content = response.choices?.[0]?.message?.content || "No response received";
-  const tokens = response.usage?.total_tokens ?? 0;
+  const content = response.choices?.[0]?.message?.content;
+  const finishReason = response.choices?.[0]?.finish_reason;
+  if (!content) {
+    throw new Error(
+      `Model "${model.id}" returned no text (finish_reason: ${finishReason ?? "unknown"}). ` +
+        "Try a different model or a shorter prompt."
+    );
+  }
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: `[Model: ${model} | Tokens: ${tokens}]\n\n${content}`,
-      },
-    ],
-  };
+  const usage = response.usage;
+  const cost = await estimateTextCost(model.id, usage?.prompt_tokens, usage?.completion_tokens);
+  const meta = [
+    `model: ${model.id}`,
+    usage ? `tokens: ${usage.prompt_tokens} in / ${usage.completion_tokens} out / ${usage.total_tokens} total` : "tokens: not reported",
+    cost === null ? null : `estimated cost: $${cost.toFixed(6)}`,
+    finishReason ? `finish_reason: ${finishReason}` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join(" | ");
+
+  return { content: [{ type: "text", text: `[${meta}]\n\n${content}` }] };
+}
+
+async function estimateTextCost(
+  modelId: string,
+  inputTokens?: number,
+  outputTokens?: number
+): Promise<number | null> {
+  if (inputTokens === undefined && outputTokens === undefined) return null;
+  // Hits the in-memory catalog cache — no extra network call on the response path.
+  const catalog = await loadCatalog();
+  const model = findModel(catalog, modelId);
+  if (!model || model.pricing.inputPer1M === null || model.pricing.outputPer1M === null) return null;
+  return (
+    ((inputTokens ?? 0) * model.pricing.inputPer1M +
+      (outputTokens ?? 0) * model.pricing.outputPer1M) /
+    1_000_000
+  );
 }

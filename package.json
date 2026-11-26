@@ -1,27 +1,37 @@
 {
   "name": "@normahub/mcp-server",
-  "version": "0.2.5",
-  "description": "Model Context Protocol (MCP) server for NormaHub API. Stdio and SSE transports for Cursor, Claude Desktop and AI agents.",
+  "version": "0.2.6",
+  "mcpName": "io.github.normahubcc/mcp-server-normahub",
+  "description": "MCP server for NormaHub: chat, image, video and audio models with live catalog. Stdio and HTTP transports.",
   "main": "dist/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
-    "mcp-server": "./dist/index.js",
     "normahub-mcp": "./dist/index.js",
+    "mcp-server": "./dist/index.js",
+    "normahub-mcp-http": "./dist/sse.js",
     "normahub-mcp-sse": "./dist/sse.js"
   },
   "files": [
     "dist",
+    "!dist/tests",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "server.json",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",
-    "test": "tsc && node --test dist/tests/server.test.js",
+    "test": "tsc && node --test \"dist/tests/*.test.js\"",
     "start": "node dist/index.js",
+    "start:http": "node dist/sse.js",
     "start:sse": "node dist/sse.js",
     "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
     "watch": "tsc --watch",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm run check:release && npm test",
+    "check:release": "node scripts/check-release.mjs"
   },
   "keywords": [
     "mcp",
@@ -31,21 +41,26 @@
     "cursor",
     "openai",
     "anthropic",
-    "seedance",
-    "ai-agents"
+    "deepseek",
+    "video-generation",
+    "ai-agents",
+    "russia"
   ],
   "author": "NormaHub Team <manager@normahub.cc>",
   "license": "MIT",
   "homepage": "https://normahub.cc",
   "repository": {
     "type": "git",
-    "url": "https://github.com/normahubcc/mcp-server-normahub.git"
+    "url": "git+https://github.com/normahubcc/mcp-server-normahub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/normahubcc/mcp-server-normahub/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.1"
+    "@modelcontextprotocol/sdk": "^1.32.1"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
   }
 }
